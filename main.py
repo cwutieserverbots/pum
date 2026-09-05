@@ -47,7 +47,7 @@ TOS_RULES_TEXT = """<:INVISIBLEBLOCK:1419367268751642654> ͏  **‿ ₊ ׁ ͏ �
 <:BowsCredsToNapsDiscord:1514749536088621207> **f**ake/**c**harging back payments will re__sult__ in a ban (**no appeal**) and a **DMCA**
 <:BowsCredsToNapsDiscord:1514749536088621207> **y**our agreement will be **logged** incase of any __issues__
 <:CredWishingPenR:1528355071392350288> {mention} **t**o agree to my rules, type "**i agree**" in chat <:LolipopRCredsToNapsDiscord:1514749987026767872> 
--# not agreeing will lead to your ticket being closed \<:baddiestoken:1523012349815160996> """
+-# not agreeing will lead to your ticket being closed <:baddiestoken:1523012349815160996> """
 
 TOS_THANKYOU_TEXT = """<:LolipopLCredsToNapsDiscord:1514750012465352904> thank you, {mention} you have agreed to my rules 𓈒 𓈒 𓈒
 <:bonBOWDNS:1515751859128635533><:bonBOWDNS2:1515751886840402112> {staff_mention} or {owner_mention} will help you shortly <:HeartOutline:1528358317112557578>"""
