@@ -44,7 +44,7 @@ TOS_RULES_TEXT = """<:INVISIBLEBLOCK:1419367268751642654> ͏  **‿ ₊ ׁ ͏ �
 <:BowsCredsToNapsDiscord:1514749536088621207> **p**ayment must always be sent **first**
 <:BowsCredsToNapsDiscord:1514749536088621207> **p**ayment must also be pre__pared__, **no waiting**
 <:BowsCredsToNapsDiscord:1514749536088621207> **t**here is no **refunds** unless its an is__sue__ on my end
-<:BowsCredsToNapsDiscord:1514749536088621207> **p**urchasing an **assetpack** & you leave server = loose access no **refunds**
+<:BowsCredsToNapsDiscord:1514749536088621207> **p**urchasing an **assetpack** & you leave server = lose access no **refunds**
 <:BowsCredsToNapsDiscord:1514749536088621207> **b**e r**espectful** to all staff members & owner
 <:BowsCredsToNapsDiscord:1514749536088621207> **y**ou cannot **resell** any of my ugcs
 <:BowsCredsToNapsDiscord:1514749536088621207> **y**ou cannot **steal** my meshes
