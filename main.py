@@ -1,3 +1,4 @@
+import math
 import os
 import re
 import sqlite3
@@ -29,7 +30,11 @@ bot = commands.Bot(command_prefix=".", intents=intents, help_command=None)
 # changes later are a small follow-up job, not a self-serve command.
 # ———————————————––
 
-AGREE_REACT_EMOJI = "<:pumarrowdown:1420162264836739152>"
+AGREE_REACT_EMOJIS = [
+    "<a:316099angel1:1515075390971056179>",
+    "<:DnsBowBon:1515405474848047265>",
+    "<a:316099angel2:1515075425804751109>",
+]
 
 TOS_RULES_TEXT = """<:INVISIBLEBLOCK:1419367268751642654> ͏  **‿ ₊ ׁ ͏ ︶ ₊‿** <:INVISIBLEBLOCK:1419367268751642654> <:bonBOWDNS:1515751859128635533> <:bonBOWDNS2:1515751886840402112> <:INVISIBLEBLOCK:1419367268751642654>**‿₊ ︶ ׁ ͏ ₊ ‿**
 <:INVISIBLEBLOCK:1419367268751642654><:INVISIBLEBLOCK:1419367268751642654><:INVISIBLEBLOCK:1419367268751642654><:dnsBUTTERFLYbonDNSDNSDNS:1515774840395665609>.˚ ა  ***my rules*** ໒ ˚ . <:DNSButterflyBON:1515405223215108198>
@@ -327,10 +332,11 @@ async def on_message(message: discord.Message):
     if "i agree" not in message.content.lower():
         return
 
-    try:
-        await message.add_reaction(AGREE_REACT_EMOJI)
-    except Exception as e:
-        print(f"[DEBUG] Failed to react to agreement message: {e}")
+    for emoji in AGREE_REACT_EMOJIS:
+        try:
+            await message.add_reaction(emoji)
+        except Exception as e:
+            print(f"[DEBUG] Failed to add reaction {emoji} to agreement message: {e}")
 
     settings = get_settings(message.guild.id)
     staff_mention = role_mention_or_fallback(message.guild, settings["staff_role_id"] if settings else None, "staff")
@@ -439,8 +445,10 @@ async def usd_command(ctx: commands.Context, amount: float):
 
 @bot.command(name="tax")
 async def tax_command(ctx: commands.Context, amount: float):
-    """.tax <amount> — Robux amount before/after Roblox's 30% marketplace tax."""
-    after_tax = amount * 0.70
+    """.tax <amount> — how much you need to charge (after tax) to actually
+    net this amount, given Roblox's 30% marketplace tax. E.g. .tax 100 ->
+    before tax: 100, after tax: 143 (charge 143 to net 100)."""
+    after_tax = math.ceil(amount / 0.70)
     await ctx.send(TAX_TEXT.format(before=format_number(amount), after=format_number(after_tax)))
 
 
