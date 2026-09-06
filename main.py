@@ -36,6 +36,9 @@ AGREE_REACT_EMOJIS = [
     "<a:316099angel2:1515075425804751109>",
 ]
 
+STAFF_ROLE_ID = 1524147379841011782
+OWNER_ROLE_ID = 1419437479148130376
+
 TOS_RULES_TEXT = """<:INVISIBLEBLOCK:1419367268751642654> ͏  **‿ ₊ ׁ ͏ ︶ ₊‿** <:INVISIBLEBLOCK:1419367268751642654> <:bonBOWDNS:1515751859128635533> <:bonBOWDNS2:1515751886840402112> <:INVISIBLEBLOCK:1419367268751642654>**‿₊ ︶ ׁ ͏ ₊ ‿**
 <:INVISIBLEBLOCK:1419367268751642654><:INVISIBLEBLOCK:1419367268751642654><:INVISIBLEBLOCK:1419367268751642654><:dnsBUTTERFLYbonDNSDNSDNS:1515774840395665609>.˚ ა  ***my rules*** ໒ ˚ . <:DNSButterflyBON:1515405223215108198>
 <:BowsCredsToNapsDiscord:1514749536088621207> **p**ayment must always be sent **first**
@@ -91,8 +94,9 @@ def format_number(value: float) -> str:
 
 
 # ———————————————––
-# Database Helpers — just enough to run .tos_ticket_config / .tos_roles /
-# the "who's allowed to say i agree" tracking. No templates table at all.
+# Database Helpers — just enough to run .tos_ticket_config and the "who's
+# allowed to say i agree" tracking. Staff/owner roles are hardcoded above,
+# no longer stored in the DB.
 # ———————————————––
 
 def get_db() -> sqlite3.Connection:
@@ -110,9 +114,7 @@ def init_db() -> None:
         CREATE TABLE IF NOT EXISTS settings (
             guild_id INTEGER PRIMARY KEY,
             tos_ticket_category_id INTEGER,
-            tos_ticket_prefix TEXT,
-            staff_role_id INTEGER,
-            owner_role_id INTEGER
+            tos_ticket_prefix TEXT
         )
         """
     )
@@ -144,7 +146,7 @@ def get_settings(guild_id: int) -> sqlite3.Row | None:
 
 
 def upsert_settings(guild_id: int, **kwargs) -> None:
-    allowed = {"tos_ticket_category_id", "tos_ticket_prefix", "staff_role_id", "owner_role_id"}
+    allowed = {"tos_ticket_category_id", "tos_ticket_prefix"}
     updates = {k: v for k, v in kwargs.items() if k in allowed}
     if not updates:
         return
@@ -338,9 +340,8 @@ async def on_message(message: discord.Message):
         except Exception as e:
             print(f"[DEBUG] Failed to add reaction {emoji} to agreement message: {e}")
 
-    settings = get_settings(message.guild.id)
-    staff_mention = role_mention_or_fallback(message.guild, settings["staff_role_id"] if settings else None, "staff")
-    owner_mention = role_mention_or_fallback(message.guild, settings["owner_role_id"] if settings else None, "owner")
+    staff_mention = role_mention_or_fallback(message.guild, STAFF_ROLE_ID, "staff")
+    owner_mention = role_mention_or_fallback(message.guild, OWNER_ROLE_ID, "owner")
 
     await message.channel.send(TOS_THANKYOU_TEXT.format(mention=message.author.mention, staff_mention=staff_mention, owner_mention=owner_mention))
     clear_tos_pending(message.channel.id)
@@ -383,15 +384,6 @@ async def tos_ticket_config_clear(ctx: commands.Context):
     """.tos_ticket_config_clear — turns off auto-posting; use .a manually instead."""
     upsert_settings(ctx.guild.id, tos_ticket_category_id="", tos_ticket_prefix="")
     await ctx.reply("✅ Auto-posting TOS on new tickets is now off.", mention_author=False)
-
-
-@bot.command(name="tos_roles")
-@commands.has_permissions(manage_guild=True)
-async def tos_roles(ctx: commands.Context, staff_role: discord.Role, owner_role: discord.Role):
-    """.tos_roles @StaffRole @OwnerRole — sets which roles get pinged in the
-    'thank you for agreeing' message."""
-    upsert_settings(ctx.guild.id, staff_role_id=str(staff_role.id), owner_role_id=str(owner_role.id))
-    await ctx.reply(f"✅ Staff role: {staff_role.mention} | Owner role: {owner_role.mention}", mention_author=False)
 
 
 # ———————————————––
