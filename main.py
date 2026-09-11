@@ -7,7 +7,7 @@ from pathlib import Path
 
 import aiohttp
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -44,7 +44,7 @@ TOS_RULES_TEXT = """<:INVISIBLEBLOCK:1419367268751642654> ͏  **‿ ₊ ׁ ͏ �
 <:BowsCredsToNapsDiscord:1514749536088621207> **p**ayment must always be sent **first**
 <:BowsCredsToNapsDiscord:1514749536088621207> **p**ayment must also be pre__pared__, **no waiting**
 <:BowsCredsToNapsDiscord:1514749536088621207> **t**here is no **refunds** unless its an is__sue__ on my end
-<:BowsCredsToNapsDiscord:1514749536088621207> **p**urchasing an **assetpack** & you leave server = lose access no **refunds**
+<:BowsCredsToNapsDiscord:1514749536088621207> **p**urchasing an **assetpack** & you leave server = loose access no **refunds**
 <:BowsCredsToNapsDiscord:1514749536088621207> **b**e r**espectful** to all staff members & owner
 <:BowsCredsToNapsDiscord:1514749536088621207> **y**ou cannot **resell** any of my ugcs
 <:BowsCredsToNapsDiscord:1514749536088621207> **y**ou cannot **steal** my meshes
@@ -82,8 +82,15 @@ TAX_TEXT = """**‿𓈒೨** <a:316099angel1:1515075390971056179>***robux tax***
 <:LolipopLCredsToNapsDiscord:1514750012465352904>ა **before tax**: <:robux:1515100825792413766> {before} <:LongBowRCredsToNapsDiscord:1514749604158246962>
 <:LolipopRCredsToNapsDiscord:1514749987026767872>ა **after tax**: <:robux:1515100825792413766> {after} <:CredWishingPenL:1528355102706892893>"""
 
+FP_STARTED_TEXT = "⏰ **{label} FP timer started** — will remind 2 hours before, and ping when the {hours} hours are up."
+FP_REMINDER_TEXT = "⏰ **{label} FP timer — 2 hours left!** {owner_mention}"
+FP_EXPIRED_TEXT = "⏰ **{label} FP timer is up!** {owner_mention}"
+
 RATE_CACHE: dict[tuple[str, str], tuple[float, float]] = {}
 RATE_CACHE_TTL_SECONDS = 3600
+
+FP_CHECK_INTERVAL_SECONDS = 30
+FP_REMINDER_LEAD_SECONDS = 2 * 3600
 
 
 def format_number(value: float) -> str:
@@ -94,9 +101,9 @@ def format_number(value: float) -> str:
 
 
 # ———————————————––
-# Database Helpers — just enough to run .tos_ticket_config and the "who's
-# allowed to say i agree" tracking. Staff/owner roles are hardcoded above,
-# no longer stored in the DB.
+# Database Helpers — settings for .tos_ticket_config, "who's allowed to say
+# i agree" tracking, and FP (final payment) timers. Staff/owner roles are
+# hardcoded above, not stored in the DB.
 # ———————————————––
 
 def get_db() -> sqlite3.Connection:
@@ -128,6 +135,25 @@ def init_db() -> None:
             channel_id INTEGER PRIMARY KEY,
             guild_id INTEGER NOT NULL,
             target_user_id INTEGER
+        )
+        """
+    )
+
+    # FP (final payment) timers — one row per active countdown. Stored with
+    # an absolute expires_at (unix timestamp) so it survives bot restarts;
+    # a background loop polls for rows that are due (or due for a 2-hour
+    # reminder) and pings when found. reminder_sent prevents the reminder
+    # from firing more than once per timer.
+    cur.execute(
+        """
+        CREATE TABLE IF NOT EXISTS fp_timers (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            channel_id INTEGER NOT NULL,
+            guild_id INTEGER NOT NULL,
+            label TEXT NOT NULL,
+            hours INTEGER NOT NULL,
+            expires_at REAL NOT NULL,
+            reminder_sent INTEGER NOT NULL DEFAULT 0
         )
         """
     )
@@ -186,6 +212,55 @@ def clear_tos_pending(channel_id: int) -> None:
     cur.execute("DELETE FROM tos_pending WHERE channel_id = ?", (channel_id,))
     conn.commit()
     conn.close()
+
+
+def create_fp_timer(channel_id: int, guild_id: int, label: str, hours: int) -> None:
+    expires_at = time.time() + hours * 3600
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "INSERT INTO fp_timers (channel_id, guild_id, label, hours, expires_at, reminder_sent) VALUES (?, ?, ?, ?, ?, 0)",
+        (channel_id, guild_id, label, hours, expires_at),
+    )
+    conn.commit()
+    conn.close()
+
+
+def pop_due_fp_timers() -> list[sqlite3.Row]:
+    """Fetches every FP timer whose final time is up, then deletes them from
+    the DB in the same breath, so a slow Discord API call afterward can't
+    cause the same timer to fire twice."""
+    now = time.time()
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM fp_timers WHERE expires_at <= ?", (now,))
+    due = cur.fetchall()
+    if due:
+        ids = [row["id"] for row in due]
+        cur.executemany("DELETE FROM fp_timers WHERE id = ?", [(i,) for i in ids])
+        conn.commit()
+    conn.close()
+    return due
+
+
+def pop_due_fp_reminders() -> list[sqlite3.Row]:
+    """Fetches every FP timer that's within its 2-hour reminder window (but
+    not yet expired) and hasn't had its reminder sent, then immediately
+    flags reminder_sent so it can't fire twice."""
+    now = time.time()
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT * FROM fp_timers WHERE reminder_sent = 0 AND expires_at > ? AND expires_at - ? <= ?",
+        (now, now, FP_REMINDER_LEAD_SECONDS),
+    )
+    due = cur.fetchall()
+    if due:
+        ids = [row["id"] for row in due]
+        cur.executemany("UPDATE fp_timers SET reminder_sent = 1 WHERE id = ?", [(i,) for i in ids])
+        conn.commit()
+    conn.close()
+    return due
 
 
 # ———————————————––
@@ -263,6 +338,11 @@ async def post_tos(channel: discord.TextChannel, target: discord.Member | None) 
     set_tos_pending(channel.id, channel.guild.id, target.id if target else None)
 
 
+async def start_fp_timer(ctx: commands.Context, hours: int, label: str) -> None:
+    create_fp_timer(ctx.channel.id, ctx.guild.id, label, hours)
+    await ctx.send(FP_STARTED_TEXT.format(label=label, hours=hours))
+
+
 # ———————————————––
 # Events
 # ———————————————––
@@ -270,6 +350,8 @@ async def post_tos(channel: discord.TextChannel, target: discord.Member | None) 
 @bot.event
 async def on_ready():
     init_db()
+    if not check_fp_timers.is_running():
+        check_fp_timers.start()
     print(f"Bot user: {bot.user}")
 
 
@@ -345,6 +427,41 @@ async def on_message(message: discord.Message):
 
     await message.channel.send(TOS_THANKYOU_TEXT.format(mention=message.author.mention, staff_mention=staff_mention, owner_mention=owner_mention))
     clear_tos_pending(message.channel.id)
+
+
+# ———————————————––
+# Background loop — FP (final payment) timers
+# ———————————————––
+
+@tasks.loop(seconds=FP_CHECK_INTERVAL_SECONDS)
+async def check_fp_timers():
+    # 2-hour-before reminders first, then final expiries.
+    for row in pop_due_fp_reminders():
+        channel = bot.get_channel(row["channel_id"])
+        if channel is None:
+            print(f"[DEBUG] FP reminder fired for channel {row['channel_id']} but channel wasn't found (deleted?).")
+            continue
+        owner_mention = role_mention_or_fallback(channel.guild, OWNER_ROLE_ID, "owner")
+        try:
+            await channel.send(FP_REMINDER_TEXT.format(label=row["label"], owner_mention=owner_mention))
+        except Exception as e:
+            print(f"[DEBUG] Failed to send FP reminder in channel {row['channel_id']}: {e}")
+
+    for row in pop_due_fp_timers():
+        channel = bot.get_channel(row["channel_id"])
+        if channel is None:
+            print(f"[DEBUG] FP timer fired for channel {row['channel_id']} but channel wasn't found (deleted?).")
+            continue
+        owner_mention = role_mention_or_fallback(channel.guild, OWNER_ROLE_ID, "owner")
+        try:
+            await channel.send(FP_EXPIRED_TEXT.format(label=row["label"], owner_mention=owner_mention))
+        except Exception as e:
+            print(f"[DEBUG] Failed to send FP timer ping in channel {row['channel_id']}: {e}")
+
+
+@check_fp_timers.before_loop
+async def before_check_fp_timers():
+    await bot.wait_until_ready()
 
 
 # ———————————————––
@@ -442,6 +559,34 @@ async def tax_command(ctx: commands.Context, amount: float):
     before tax: 100, after tax: 143 (charge 143 to net 100)."""
     after_tax = math.ceil(amount / 0.70)
     await ctx.send(TAX_TEXT.format(before=format_number(amount), after=format_number(after_tax)))
+
+
+# ———————————————––
+# Commands — FP (final payment) timers
+# ———————————————––
+
+@bot.command(name="fp72")
+@commands.has_permissions(manage_messages=True)
+async def fp72_command(ctx: commands.Context):
+    """.fp72 — starts a 72-hour (3 day) FP timer in this channel. Reminds 2
+    hours before, then pings owner here once it's up."""
+    await start_fp_timer(ctx, 72, "3 Day")
+
+
+@bot.command(name="fp48")
+@commands.has_permissions(manage_messages=True)
+async def fp48_command(ctx: commands.Context):
+    """.fp48 — starts a 48-hour (2 day) FP timer in this channel. Reminds 2
+    hours before, then pings owner here once it's up."""
+    await start_fp_timer(ctx, 48, "2 Day")
+
+
+@bot.command(name="fp24")
+@commands.has_permissions(manage_messages=True)
+async def fp24_command(ctx: commands.Context):
+    """.fp24 — starts a 24-hour (1 day) FP timer in this channel. Reminds 2
+    hours before, then pings owner here once it's up."""
+    await start_fp_timer(ctx, 24, "1 Day")
 
 
 # ———————————————––
