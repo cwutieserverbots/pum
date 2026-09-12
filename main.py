@@ -82,7 +82,8 @@ TAX_TEXT = """**‿𓈒೨** <a:316099angel1:1515075390971056179>***robux tax***
 <:LolipopLCredsToNapsDiscord:1514750012465352904>ა **before tax**: <:robux:1515100825792413766> {before} <:LongBowRCredsToNapsDiscord:1514749604158246962>
 <:LolipopRCredsToNapsDiscord:1514749987026767872>ა **after tax**: <:robux:1515100825792413766> {after} <:CredWishingPenL:1528355102706892893>"""
 
-FP_STARTED_TEXT = "⏰ **{label} FP timer started** — will remind 2 hours before, and ping when the {hours} hours are up."
+FP_STARTED_TEXT = """<:bonBOWDNS:1515751859128635533><:bonBOWDNS2:1515751886840402112> ‿𓈒೨ ***{label} FP timer started*** ౿𓈒‿ <:LolipopRCredsToNapsDiscord:1514749987026767872> 
+-# <:BowsCredsToNapsDiscord:1514749536088621207> will remind 2 hours before, and ping when the **{hours} hours** are up <:CredWishingPenL:1528355102706892893>"""
 FP_REMINDER_TEXT = "⏰ **{label} FP timer — 2 hours left!** {owner_mention}"
 FP_EXPIRED_TEXT = "⏰ **{label} FP timer is up!** {owner_mention}"
 
